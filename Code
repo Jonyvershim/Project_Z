@@ -1,0 +1,72 @@
+from io import StringIO
+from aiogram import Bot, Dispatcher, executor, types
+from aiogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from bs4 import BeautifulSoup
+import re
+import requests
+import pandas as pd
+import numpy as np
+'''Get Data'''
+url = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSNR-Gvp7MBcYQo0GM5nU3UC7DSIGMCwKq-eQGIY_alqORpe1pvZ00PI63wNuOyiJbZI_AP6nSeWWop/pubhtml'
+
+page = requests.get(url)
+
+soup = BeautifulSoup(page.text, 'lxml')
+
+tmp = (pd.read_html(StringIO(page.text))[0].iloc[4:, 1:]
+       .dropna(how="all").T.set_index(4).T)
+
+s = tmp.columns.to_series()
+tmp.columns = (s.str.cat(s.groupby(level=0).cumcount().add(1)
+                         .astype(str), sep="-").where(s.duplicated(keep=False), s))
+
+df = tmp.set_index(["Время-1", "Время-2"]).rename_axis(columns=None)
+
+print(df.loc["ПОНЕДЕЛЬНИК", "ДПО-3-23"])
+
+
+''' Get Schedule bot '''
+bot = Bot(token="my_token")
+dp = Dispatcher(bot)
+
+# Creating an Inline keyboard to start
+@dp.message_handler(commands=['start', 'help'])
+async def welcome(message: types.Message):
+    keyboard = types.InlineKeyboardMarkup()
+
+    button_comtehno = types.InlineKeyboardButton(text="Comtehno", callback_data='comtehno')
+    keyboard.add(button_comtehno)
+
+    await message.reply("Привет, я Schedule bot ! Я здесь чтобы дать тебе твое расписание пар :з\n"
+                              "\nДля того чтобы начать - выбери УЗ: ", reply_markup=keyboard)
+
+@dp.callback_query_handler(lambda query: query.data == 'comtehno')
+# Handler for clicking on the "Comtehno" button
+async def comtehno_handler(query: types.CallbackQuery):
+    keyboard = types.InlineKeyboardMarkup()
+    button_set_schedule = types.InlineKeyboardButton(text="Установить расписание", callback_data='set_schedule')
+    button_schedule = types.InlineKeyboardButton(text="Фото Расписания", callback_data='расписание')
+    button_go_site = types.InlineKeyboardButton(text="Сайт с расписанием", url='https://docs.google.com/spreadsheets/d/e/2PACX-1vSNR-Gvp7MBcYQo0GM5nU3UC7DSIGMCwKq-eQGIY_alqORpe1pvZ00PI63wNuOyiJbZI_AP6nSeWWop/pubhtml')
+    keyboard.row(button_schedule, button_go_site)
+    keyboard.row(button_set_schedule)
+
+    await bot.send_message(query.from_user.id, "Выберите раздел:", reply_markup=keyboard)
+# Handler for clicking on the "расписание" button
+@dp.callback_query_handler(lambda query: query.data == 'расписание')
+async def schedule_handler(query: types.CallbackQuery):
+    with open("Screenshot_13.png", 'rb') as photo:
+        await bot.send_photo(query.from_user.id, photo)
+        await bot.send_message(query.from_user.id, "Вот фото расписания")
+
+@dp.callback_query_handler(lambda query: query.data == 'set_schedule')
+async def set_schedule(query: types.CallbackQuery):
+    await bot.send_message(query.from_user.id, "Для того чтобы автоматически получать расписание каждое утро отправьте сообщение по шаблону: \n\n"
+                                               "ДПО-3-23")
+
+@dp.message_handler()
+async def answer(message: types.Message):
+    await message.reply("Чтобы использовать функционал напишите /start или /help")
+
+
+executor.start_polling(dp)
